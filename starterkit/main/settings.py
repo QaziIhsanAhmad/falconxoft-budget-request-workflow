@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'django_celery_beat',
     'apps.admin_panel',
     'apps.system',
+    'apps.budget_requests'
 ]
 
 MIDDLEWARE = [
