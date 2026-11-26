@@ -1,114 +1,65 @@
-# Django + Inertia + React + shadcn/ui Starter Kit
+## Budget Request Workflow — Assessment
 
-A full-stack starter for building web apps with **Django** on the backend and **React** on the frontend, glued together by **Inertia.js** — no separate API, no separate SPA deployment. It ships with a production-ready **admin console** built on **shadcn/ui**: users, groups, permissions, light and dark themes.
+This repository extends the Django + Inertia + React starter kit with a role-based Budget Request Workflow.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.png">
-  <img alt="Admin dashboard" src="docs/images/dashboard-light.png">
-</picture>
+### Project Overview
 
-## Features
+The application allows employees to submit budget requests, Managers to review them, and Admins to oversee requests and financial totals.
 
-- **Django 6** owns routing, authentication, permissions and validation
-- **Inertia.js 2 + React 18** for SPA-speed navigation with server-side routing
-- **shadcn/ui** (new-york, zinc) with the Geist font, light and dark themes
-- **Admin console** — collapsible sidebar, breadcrumbs, ⌘K command palette, toasts, responsive mobile layout
-- **User & group management** — search, sorting, pagination, validation, safe deletes
-- **Secure by default** — Django model permissions, superuser-only privilege changes, self-lockout protection, password validation, login throttling, CSRF
-- **Clean architecture** — views → services → selectors / policies, with DTOs at the boundaries ([details](docs/architecture.md))
-- **Celery + Redis** for background jobs, with **Celery Beat** schedules editable in Django admin
-- **Vite 7** dev server with HMR and manifest-based production builds
-- **Tested** — 100+ Django tests, ESLint and Vitest on the frontend
+A budget request contains:
+- Title
+- Requested amount
+- Business justification
+- Request status
+- Requester and reviewer information
+- Reviewer feedback
+- Creation and update timestamps
 
-## Screenshots
+### Request Lifecycle
 
-| Sign in | Users |
+Requests move through the following statuses:
+
+- **PENDING** — Newly submitted and awaiting review.
+- **APPROVED** — Approved by a Manager.
+- **REJECTED** — Rejected by a Manager with mandatory feedback.
+- **WITHDRAWN** — Withdrawn by the requesting Client.
+
+### Roles and Permissions
+
+| Role | Permissions |
 |---|---|
-| ![Sign in page](docs/images/login-light.png) | ![Users list](docs/images/users-light.png) |
-| **Edit user** | **Command palette (⌘K)** |
-| ![Edit user form](docs/images/user-edit-light.png) | ![Command palette](docs/images/command-dark.png) |
-| **Groups** | **Collapsed sidebar** |
-| ![Groups list](docs/images/groups-dark.png) | ![Collapsed sidebar](docs/images/collapsed-light.png) |
+| Client | Create requests, edit own pending requests, withdraw own pending requests, view permitted requests. |
+| Manager | View requests available for review and approve or reject pending requests. Rejection requires feedback. |
+| Admin | View all requests and financial totals; permanently delete requests. Admins cannot approve or reject requests. |
 
-<p>
-  <img alt="Mobile dashboard" src="docs/images/mobile-light.png" width="260">
-  &nbsp;
-  <img alt="Mobile navigation" src="docs/images/mobile-nav-dark.png" width="260">
-</p>
+### Architecture and Design Decisions
 
-More in the [screenshot gallery](docs/screenshots.md).
+The Budget Request Workflow follows a layered Django architecture:
 
-## Quick start
+- **Models:** Store budget request data and relationships.
+- **Domain policies:** Centralize role-based access rules and workflow conditions.
+- **Services:** Handle business operations such as creating, updating, withdrawing and reviewing requests.
+- **Tests:** Verify permissions, valid transitions, validation errors and service behavior.
 
-**Requirements:** Python 3.12+ ([uv](https://github.com/astral-sh/uv) recommended) and Node.js 20.19+.
+Business rules are enforced in backend services rather than relying only on frontend controls. This prevents unauthorized users from bypassing workflow restrictions by sending requests directly to the backend.
 
-```bash
-git clone git@github.com:crenspire/django-react-boilerplate.git
-cd django-react-boilerplate
+Manager review operations use database transactions and row-level locking to help protect against concurrent updates.
 
-# Backend
-uv run python starterkit/manage.py migrate
-uv run python starterkit/manage.py createsuperuser
-uv run python starterkit/manage.py runserver
+### Important Workflow Rules
 
-# Frontend (second terminal)
-cd starterkit/frontend
-npm install
-npm run dev
-```
+- Only the owning Client can edit or withdraw their own pending request.
+- Only Managers can review pending requests.
+- Rejection requires non-empty feedback.
+- Approved, rejected and withdrawn requests cannot be reviewed again.
+- Admin privileges do not automatically grant Manager review permissions.
 
-Open **http://127.0.0.1:8000** for the landing page and **http://127.0.0.1:8000/admin/** for the admin console.
+### Implementation Status
 
-Background jobs need Redis, a Celery worker and Beat. Start Redis with `docker compose up -d`, then run everything at once with `uvx honcho -f Procfile.dev start` (see [Background tasks](docs/background-tasks.md)).
+**Backend:** Budget request services, policies and backend tests have been implemented.
 
-The full walkthrough is in [Getting started](docs/getting-started.md).
+**Frontend:** The assessment-specific frontend workflow is still in progress. Do not consider the full assessment complete until the frontend workflows are implemented and verified.
 
-## Documentation
+### Loom Demo
 
-| Guide | What's inside |
-|---|---|
-| [Getting started](docs/getting-started.md) | Install, run, create an admin, project layout |
-| [Architecture](docs/architecture.md) | Layers and rules, request lifecycle, adding a feature step by step |
-| [Permissions](docs/permissions.md) | Who can do what in the admin and how to change it |
-| [Frontend](docs/frontend.md) | Admin shell, pages, shadcn/ui components, routes, theming |
-| [Background tasks](docs/background-tasks.md) | Celery workers, Beat schedules, Redis |
-| [Configuration](docs/configuration.md) | Environment variables |
-| [Deployment](docs/deployment.md) | Production build, static files, security checklist |
-| [Testing](docs/testing.md) | Running and writing backend and frontend tests |
+Demo recording: To be added after recording.
 
-## Project structure
-
-```
-starterkit/
-├── main/                     # Django project: settings, urls, middleware, Celery app, route map
-├── apps/system/              # Maintenance services and Celery tasks
-├── apps/admin_panel/         # Admin console
-│   ├── api/                  #   views: parse request → call one service → respond
-│   ├── services/             #   business logic and page props
-│   ├── selectors/            #   all ORM queries
-│   ├── domain/               #   permission policies
-│   ├── dto/                  #   immutable input/output containers
-│   ├── infrastructure/       #   adapters for external systems (cache)
-│   └── tests/
-├── frontend/                 # React + Vite + Inertia
-│   ├── Pages/                #   one component per Inertia page
-│   ├── Layouts/              #   AdminLayout, AuthLayout
-│   ├── Components/           #   ui/ (shadcn/ui), admin/ (app components)
-│   ├── composables/          #   React hooks
-│   └── lib/                  #   pure helpers (+ unit tests)
-├── templates/base.html       # Inertia root template
-└── manage.py
-```
-
-## Tests
-
-```bash
-uv run python starterkit/manage.py test      # backend
-
-cd starterkit/frontend
-npm run lint && npm test                      # frontend
-```
-
-## License
-
-MIT. Use this starter for personal or commercial projects.
