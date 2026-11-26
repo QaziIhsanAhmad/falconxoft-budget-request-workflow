@@ -1,4 +1,3 @@
-
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 
@@ -6,6 +5,7 @@ from apps.budget_requests.models import BudgetRequest
 from apps.budget_requests.domain.policies import (
     is_client,
     can_edit_request,
+    can_withdraw_request,
 )
 
 
@@ -48,8 +48,18 @@ def create_budget_request(user, validated_data):
 
 
 @transaction.atomic
-def update_budget_request(user, budget_request, validated_data):
-    # Only the owning Client can edit their pending request
+def update_budget_request(user, request_id, validated_data):
+    # Retrieve and lock the request from the database
+    budget_request = (
+        BudgetRequest.objects.select_for_update()
+        .filter(pk=request_id)
+        .first()
+    )
+
+    if budget_request is None:
+        raise ValidationError("Budget request not found.")
+
+    # Enforce ownership and PENDING status server-side
     if not can_edit_request(user, budget_request):
         raise PermissionDenied(
             "You cannot edit this budget request."
@@ -76,15 +86,39 @@ def update_budget_request(user, budget_request, validated_data):
     for field, value in validated_data.items():
         setattr(budget_request, field, value)
 
-    # Validate all model fields before saving
+    # Validate before saving
     budget_request.full_clean()
 
-    # Save only updated fields
     budget_request.save(
         update_fields=[
             *validated_data.keys(),
             "updated_at",
         ]
     )
+
+    return budget_request
+
+
+@transaction.atomic
+def withdraw_budget_request(user, request_id):
+    # Retrieve and lock the request from the database
+    budget_request = (
+        BudgetRequest.objects.select_for_update()
+        .filter(pk=request_id)
+        .first()
+    )
+
+    if budget_request is None:
+        raise ValidationError("Budget request not found.")
+
+    # Enforce ownership and PENDING status server-side
+    if not can_withdraw_request(user, budget_request):
+        raise PermissionDenied(
+            "You cannot withdraw this budget request."
+        )
+
+    # Retain the record and its original details
+    budget_request.status = "WITHDRAWN"
+    budget_request.save(update_fields=["status", "updated_at"])
 
     return budget_request
