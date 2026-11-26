@@ -1,3 +1,4 @@
+
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 
@@ -6,6 +7,8 @@ from apps.budget_requests.domain.policies import (
     is_client,
     can_edit_request,
     can_withdraw_request,
+    can_review_request,
+    is_valid_review,
 )
 
 
@@ -120,5 +123,59 @@ def withdraw_budget_request(user, request_id):
     # Retain the record and its original details
     budget_request.status = "WITHDRAWN"
     budget_request.save(update_fields=["status", "updated_at"])
+
+    return budget_request
+
+
+@transaction.atomic
+def review_budget_request(user, request_id, decision, feedback=""):
+    # Retrieve and lock the request from the database
+    budget_request = (
+        BudgetRequest.objects.select_for_update()
+        .filter(pk=request_id)
+        .first()
+    )
+
+    if budget_request is None:
+        raise ValidationError("Budget request not found.")
+
+    # Only Managers can review PENDING requests
+    if not can_review_request(user, budget_request):
+        raise PermissionDenied(
+            "Only Managers can review pending budget requests."
+        )
+
+    if not isinstance(feedback, str):
+        raise ValidationError("Feedback must be text.")
+
+    feedback = feedback.strip()
+
+    # Allow only APPROVED or REJECTED.
+    # Rejection requires non-empty feedback.
+    if not is_valid_review(decision, feedback):
+        raise ValidationError(
+            "Decision must be APPROVED or REJECTED. "
+            "Rejection requires non-empty feedback."
+        )
+
+    # Save review decision and reviewer
+    budget_request.status = decision
+    budget_request.reviewer = user
+
+    # Store feedback for rejection only
+    budget_request.reviewer_feedback = (
+        feedback if decision == "REJECTED" else ""
+    )
+
+    budget_request.full_clean()
+
+    budget_request.save(
+        update_fields=[
+            "status",
+            "reviewer",
+            "reviewer_feedback",
+            "updated_at",
+        ]
+    )
 
     return budget_request

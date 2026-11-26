@@ -365,3 +365,134 @@ class WithdrawBudgetRequestTest(BudgetRequestServiceBaseTest):
     def test_nonexistent_request_cannot_be_withdrawn(self):
         with self.assertRaises(ValidationError):
             withdraw_budget_request(self.client_user, 999999)
+
+
+class ReviewBudgetRequestTest(BudgetRequestServiceBaseTest):
+
+    def test_manager_can_approve_request(self):
+        result = review_budget_request(
+            self.manager_user,
+            self.budget_request.pk,
+            "APPROVED",
+        )
+
+        self.budget_request.refresh_from_db()
+
+        self.assertEqual(result.status, "APPROVED")
+        self.assertEqual(self.budget_request.status, "APPROVED")
+        self.assertEqual(
+            self.budget_request.reviewer,
+            self.manager_user,
+        )
+        self.assertEqual(self.budget_request.reviewer_feedback, "")
+
+    def test_manager_can_reject_request_with_feedback(self):
+        feedback = "The requested amount is not justified."
+
+        result = review_budget_request(
+            self.manager_user,
+            self.budget_request.pk,
+            "REJECTED",
+            feedback,
+        )
+
+        self.budget_request.refresh_from_db()
+
+        self.assertEqual(result.status, "REJECTED")
+        self.assertEqual(self.budget_request.status, "REJECTED")
+        self.assertEqual(
+            self.budget_request.reviewer,
+            self.manager_user,
+        )
+        self.assertEqual(
+            self.budget_request.reviewer_feedback,
+            feedback,
+        )
+
+    def test_rejection_with_blank_feedback_is_denied(self):
+        with self.assertRaises(ValidationError):
+            review_budget_request(
+                self.manager_user,
+                self.budget_request.pk,
+                "REJECTED",
+                "",
+            )
+
+        self.budget_request.refresh_from_db()
+
+        self.assertEqual(self.budget_request.status, "PENDING")
+        self.assertIsNone(self.budget_request.reviewer)
+        self.assertEqual(self.budget_request.reviewer_feedback, "")
+
+    def test_rejection_with_whitespace_feedback_is_denied(self):
+        with self.assertRaises(ValidationError):
+            review_budget_request(
+                self.manager_user,
+                self.budget_request.pk,
+                "REJECTED",
+                "     ",
+            )
+
+        self.budget_request.refresh_from_db()
+
+        self.assertEqual(self.budget_request.status, "PENDING")
+        self.assertIsNone(self.budget_request.reviewer)
+        self.assertEqual(self.budget_request.reviewer_feedback, "")
+
+    def test_admin_cannot_review_request(self):
+        with self.assertRaises(PermissionDenied):
+            review_budget_request(
+                self.admin_user,
+                self.budget_request.pk,
+                "APPROVED",
+            )
+
+        self.budget_request.refresh_from_db()
+
+        self.assertEqual(self.budget_request.status, "PENDING")
+        self.assertIsNone(self.budget_request.reviewer)
+        self.assertEqual(self.budget_request.reviewer_feedback, "")
+
+    def test_client_cannot_review_request(self):
+        with self.assertRaises(PermissionDenied):
+            review_budget_request(
+                self.client_user,
+                self.budget_request.pk,
+                "APPROVED",
+            )
+
+        self.budget_request.refresh_from_db()
+
+        self.assertEqual(self.budget_request.status, "PENDING")
+        self.assertIsNone(self.budget_request.reviewer)
+        self.assertEqual(self.budget_request.reviewer_feedback, "")
+
+    def test_final_and_withdrawn_requests_cannot_be_reviewed_again(self):
+        for status in ["APPROVED", "REJECTED", "WITHDRAWN"]:
+            with self.subTest(status=status):
+                self.budget_request.status = status
+                self.budget_request.reviewer = None
+                self.budget_request.reviewer_feedback = ""
+                self.budget_request.save(
+                    update_fields=[
+                        "status",
+                        "reviewer",
+                        "reviewer_feedback",
+                    ]
+                )
+
+                with self.assertRaises(PermissionDenied):
+                    review_budget_request(
+                        self.manager_user,
+                        self.budget_request.pk,
+                        "APPROVED",
+                    )
+
+                self.budget_request.refresh_from_db()
+
+                self.assertEqual(self.budget_request.status, status)
+                self.assertIsNone(self.budget_request.reviewer)
+                self.assertEqual(
+                    self.budget_request.reviewer_feedback,
+                    "",
+                )
